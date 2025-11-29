@@ -8,11 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useForm } from 'react-hook-form';
-import { Sparkles, Loader2 } from 'lucide-react';
+import { Sparkles, Loader2, AlertCircle } from 'lucide-react';
 import { generatePrompt, creativeTemplates, type CreativeTemplate } from '@/utils/promptGenerator';
 import { getUserId } from '@/utils/userIdManager';
-import { submitTextToImage, pollImageResult, downloadImageAsBlob } from '@/services/aiImageService';
+import { submitTextToImage, pollImageResult, downloadImageAsBlob, AIServiceError } from '@/services/aiImageService';
 import { createGeneration, updateGeneration, uploadImageToStorage } from '@/db/api';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface FormValues {
   petType: string;
@@ -32,6 +33,7 @@ export default function CreatePage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatingStatus, setGeneratingStatus] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<CreativeTemplate | null>(null);
+  const [errorInfo, setErrorInfo] = useState<{ message: string; retryable: boolean } | null>(null);
 
   const form = useForm<FormValues>({
     defaultValues: {
@@ -60,6 +62,8 @@ export default function CreatePage() {
       return;
     }
 
+    // 清除之前的错误信息
+    setErrorInfo(null);
     setIsGenerating(true);
     const userId = getUserId();
     let generation: any = null;
@@ -146,11 +150,31 @@ export default function CreatePage() {
         });
       }
       
-      toast({
-        title: '生成失败',
-        description: error instanceof Error ? error.message : '请稍后重试',
-        variant: 'destructive',
-      });
+      // 处理AIServiceError
+      if (error instanceof AIServiceError) {
+        setErrorInfo({
+          message: error.message,
+          retryable: error.retryable,
+        });
+        
+        toast({
+          title: '生成失败',
+          description: error.message,
+          variant: 'destructive',
+        });
+      } else {
+        const errorMessage = error instanceof Error ? error.message : '请稍后重试';
+        setErrorInfo({
+          message: errorMessage,
+          retryable: true,
+        });
+        
+        toast({
+          title: '生成失败',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+      }
     } finally {
       setIsGenerating(false);
       setGeneratingStatus('');
@@ -166,6 +190,22 @@ export default function CreatePage() {
           </h1>
           <p className="text-muted-foreground">填写信息，让AI为你的宠物创造独特的平行宇宙形象</p>
         </div>
+
+        {/* 错误提示 */}
+        {errorInfo && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>生成失败</AlertTitle>
+            <AlertDescription className="flex flex-col gap-2">
+              <span>{errorInfo.message}</span>
+              {errorInfo.retryable && (
+                <span className="text-sm">
+                  💡 提示：如果是并发超限，建议等待1-2分钟后再试，或者稍后访问人数较少时使用。
+                </span>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
 
         {creativeTemplates.length > 0 && (
           <Card className="mb-8 shadow-elegant">

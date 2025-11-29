@@ -2,31 +2,80 @@ import type { TextToImageRequest, TextToImageResponse, GetImageRequest, GetImage
 
 const APP_ID = import.meta.env.VITE_APP_ID;
 
+// 自定义错误类型
+export class AIServiceError extends Error {
+  constructor(
+    message: string,
+    public code?: string,
+    public retryable: boolean = false
+  ) {
+    super(message);
+    this.name = 'AIServiceError';
+  }
+}
+
 // AI作画提交接口
 export async function submitTextToImage(request: TextToImageRequest): Promise<TextToImageResponse> {
-  const response = await fetch(
-    'https://api-integrations.appmiaoda.com/app-7vwx2uoizda9/api-jWeLMG1ga4G0/rpc/2.0/wenxin/v1/irag/textToImage',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-App-Id': APP_ID,
-      },
-      body: JSON.stringify(request),
+  try {
+    const response = await fetch(
+      'https://api-integrations.appmiaoda.com/app-7vwx2uoizda9/api-jWeLMG1ga4G0/rpc/2.0/wenxin/v1/irag/textToImage',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-App-Id': APP_ID,
+        },
+        body: JSON.stringify(request),
+      }
+    );
+
+    const data = await response.json();
+    
+    // 处理并发超限错误
+    if (data.status === 999) {
+      const errorMsg = data.msg || 'AI作画提交失败';
+      
+      // 检查是否是并发超限
+      if (errorMsg.includes('并发超限') || errorMsg.includes('并发限制')) {
+        throw new AIServiceError(
+          '当前使用人数较多，请稍后再试（建议等待1-2分钟）',
+          'CONCURRENT_LIMIT',
+          true
+        );
+      }
+      
+      throw new AIServiceError(errorMsg, 'API_ERROR', false);
     }
-  );
+    
+    if (data.status !== 0) {
+      throw new AIServiceError(
+        data.msg || 'AI作画提交失败',
+        'API_ERROR',
+        false
+      );
+    }
 
-  const data = await response.json();
-  
-  if (data.status === 999) {
-    throw new Error(data.msg || 'AI作画提交失败');
+    return data;
+  } catch (error) {
+    if (error instanceof AIServiceError) {
+      throw error;
+    }
+    
+    // 网络错误
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new AIServiceError(
+        '网络连接失败，请检查网络后重试',
+        'NETWORK_ERROR',
+        true
+      );
+    }
+    
+    throw new AIServiceError(
+      '提交请求失败，请稍后重试',
+      'UNKNOWN_ERROR',
+      true
+    );
   }
-  
-  if (data.status !== 0) {
-    throw new Error(data.msg || 'AI作画提交失败');
-  }
-
-  return data;
 }
 
 // AI作画查询结果接口
