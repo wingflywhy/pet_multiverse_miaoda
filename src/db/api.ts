@@ -108,22 +108,41 @@ export async function uploadImageToStorage(
   file: Blob,
   fileName: string
 ): Promise<string | null> {
-  const { data, error } = await supabase.storage
-    .from('app-7vwx2uoizda9_pet_images')
-    .upload(fileName, file, {
-      contentType: 'image/png',
-      upsert: false,
-    });
+  try {
+    console.log('开始上传图片:', fileName, '大小:', file.size, 'bytes');
+    
+    const { data, error } = await supabase.storage
+      .from('app-7vwx2uoizda9_pet_images')
+      .upload(fileName, file, {
+        contentType: 'image/png',
+        upsert: true,
+        cacheControl: '3600',
+      });
 
-  if (error) {
-    console.error('上传图片失败:', error);
-    return null;
+    if (error) {
+      console.error('上传图片失败，错误详情:', error);
+      throw new Error(`上传失败: ${error.message}`);
+    }
+
+    if (!data) {
+      throw new Error('上传成功但未返回数据');
+    }
+
+    console.log('图片上传成功，路径:', data.path);
+
+    // 获取公开URL
+    const { data: urlData } = supabase.storage
+      .from('app-7vwx2uoizda9_pet_images')
+      .getPublicUrl(data.path);
+
+    if (!urlData?.publicUrl) {
+      throw new Error('无法获取图片公开URL');
+    }
+
+    console.log('获取公开URL成功:', urlData.publicUrl);
+    return urlData.publicUrl;
+  } catch (error) {
+    console.error('上传图片过程出错:', error);
+    throw error;
   }
-
-  // 获取公开URL
-  const { data: urlData } = supabase.storage
-    .from('app-7vwx2uoizda9_pet_images')
-    .getPublicUrl(data.path);
-
-  return urlData.publicUrl;
 }

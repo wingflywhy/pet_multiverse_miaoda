@@ -62,6 +62,7 @@ export default function CreatePage() {
 
     setIsGenerating(true);
     const userId = getUserId();
+    let generation: any = null;
 
     try {
       setGeneratingStatus('正在生成AI指令...');
@@ -73,7 +74,7 @@ export default function CreatePage() {
       });
 
       setGeneratingStatus('正在创建生成记录...');
-      const generation = await createGeneration({
+      generation = await createGeneration({
         user_id: userId,
         pet_type: values.petType,
         new_identity: values.newIdentity,
@@ -100,25 +101,51 @@ export default function CreatePage() {
       setGeneratingStatus('正在下载并保存图片...');
       const imageBlob = await downloadImageAsBlob(imageUrl);
       const fileName = `${generation.id}.png`;
-      const storageUrl = await uploadImageToStorage(imageBlob, fileName);
+      
+      try {
+        const storageUrl = await uploadImageToStorage(imageBlob, fileName);
 
-      if (!storageUrl) {
-        throw new Error('上传图片失败');
+        if (!storageUrl) {
+          throw new Error('上传图片失败：未返回存储URL');
+        }
+
+        await updateGeneration(generation.id, {
+          image_url: storageUrl,
+          status: 'success',
+        });
+
+        toast({
+          title: '生成成功！',
+          description: '你的宠物平行宇宙形象已创建完成',
+        });
+
+        navigate(`/result/${generation.id}`);
+      } catch (uploadError) {
+        console.error('上传图片失败:', uploadError);
+        
+        // 即使上传失败，也保存临时URL，让用户可以查看
+        await updateGeneration(generation.id, {
+          image_url: imageUrl,
+          status: 'success',
+        });
+
+        toast({
+          title: '图片已生成',
+          description: '图片已生成但保存失败，已使用临时链接',
+        });
+
+        navigate(`/result/${generation.id}`);
       }
-
-      await updateGeneration(generation.id, {
-        image_url: storageUrl,
-        status: 'success',
-      });
-
-      toast({
-        title: '生成成功！',
-        description: '你的宠物平行宇宙形象已创建完成',
-      });
-
-      navigate(`/result/${generation.id}`);
     } catch (error) {
       console.error('生成失败:', error);
+      
+      // 更新状态为失败
+      if (generation?.id) {
+        await updateGeneration(generation.id, {
+          status: 'failed',
+        });
+      }
+      
       toast({
         title: '生成失败',
         description: error instanceof Error ? error.message : '请稍后重试',
